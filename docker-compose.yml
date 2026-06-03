@@ -1,0 +1,129 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER:     finpay_user
+      POSTGRES_PASSWORD: finpay_password
+      POSTGRES_DB:       finpay_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "finpay_user"]
+      interval: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: finpay
+      RABBITMQ_DEFAULT_PASS: finpay_dev_password
+      RABBITMQ_DEFAULT_VHOST: finpay
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # Management UI: http://localhost:15672
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      retries: 5
+
+  auth-service:
+    build:
+      context: .
+      args:
+        SERVICE: auth
+    environment:
+      PORT:          3001
+      SERVICE_NAME:  auth-service
+      NODE_ENV:      development
+      DATABASE_URL:  postgresql://finpay_user:finpay_password@postgres:5432/finpay_db
+      REDIS_URL:     redis://redis:6379
+      JWT_SECRET:    dev-secret-change-in-production
+      JWT_EXPIRES_IN: 7d
+      BCRYPT_ROUNDS: "10"
+      RATE_LIMIT_WINDOW_MS:       "900000"
+      RATE_LIMIT_MAX_REQUESTS:    "100"
+      AUTH_RATE_LIMIT_MAX_REQUESTS: "20"
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:  { condition: service_healthy }
+      redis:     { condition: service_healthy }
+
+  account-service:
+    build:
+      context: .
+      args:
+        SERVICE: account
+    environment:
+      PORT:          3002
+      SERVICE_NAME:  account-service
+      NODE_ENV:      development
+      DATABASE_URL:  postgresql://finpay_user:finpay_password@postgres:5432/finpay_db
+      REDIS_URL:     redis://redis:6379
+      JWT_SECRET:    dev-secret-change-in-production
+      CACHE_TTL_SECONDS: "30"
+      RATE_LIMIT_WINDOW_MS:    "900000"
+      RATE_LIMIT_MAX_REQUESTS: "100"
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:  { condition: service_healthy }
+      redis:     { condition: service_healthy }
+
+  transaction-service:
+    build:
+      context: .
+      args:
+        SERVICE: transaction
+    environment:
+      PORT:         3003
+      SERVICE_NAME: transaction-service
+      NODE_ENV:     development
+      DATABASE_URL: postgresql://finpay_user:finpay_password@postgres:5432/finpay_db
+      REDIS_URL:    redis://redis:6379
+      JWT_SECRET:   dev-secret-change-in-production
+      RABBITMQ_URL: amqp://finpay:finpay_dev_password@rabbitmq:5672/finpay
+      RATE_LIMIT_WINDOW_MS:        "900000"
+      RATE_LIMIT_MAX_REQUESTS:     "100"
+      TXN_RATE_LIMIT_WINDOW_MS:    "60000"
+      TXN_RATE_LIMIT_MAX_REQUESTS: "10"
+      IDEMPOTENCY_TTL_SECONDS:     "86400"
+      MAX_TRANSFER_AMOUNT_CENTS:   "100000000"
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:  { condition: service_healthy }
+      redis:     { condition: service_healthy }
+      rabbitmq:  { condition: service_healthy }
+
+  notification-service:
+    build:
+      context: .
+      args:
+        SERVICE: notification
+    environment:
+      PORT:         3004
+      SERVICE_NAME: notification-service
+      NODE_ENV:     development
+      RABBITMQ_URL: amqp://finpay:finpay_dev_password@rabbitmq:5672/finpay
+      ALERT_EMAIL:  github@devopschronicles.com
+    ports:
+      - "3004:3004"
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+
+volumes:
+  postgres_data:

@@ -1,0 +1,58 @@
+{
+  "name": "finpay-microservices",
+  "version": "1.0.0",
+  "description": "FinPay microservices — split from finpay-api monolith",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "shared"
+  ],
+  "scripts": {
+    "dev:auth":         "npm run dev --workspace=services/auth",
+    "dev:account":      "npm run dev --workspace=services/account",
+    "dev:transaction":  "npm run dev --workspace=services/transaction",
+    "dev:notification": "npm run dev --workspace=services/notification",
+    "dev:all":          "concurrently \"npm:dev:auth\" \"npm:dev:account\" \"npm:dev:transaction\" \"npm:dev:notification\"",
+    "lint":             "eslint services/**/src/**/*.js shared/**/*.js",
+    "db:migrate":       "npx prisma migrate deploy",
+    "db:generate":      "npx prisma generate",
+    "db:seed":          "node prisma/seed.cjs",
+    "db:studio":        "npx prisma studio"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.cjs"
+  },
+  "dependencies": {
+    "@prisma/client":       "^5.22.0",
+    "bcryptjs":             "^3.0.3",
+    "cors":                 "^2.8.6",
+    "dotenv":               "^17.4.2",
+    "express":              "^5.2.1",
+    "express-rate-limit":   "^8.3.2",
+    "express-validator":    "^7.3.2",
+    "helmet":               "^8.1.0",
+    "ioredis":              "^5.10.1",
+    "jsonwebtoken":         "^9.0.3",
+    "morgan":               "^1.10.1",
+    "prisma":               "^5.22.0",
+    "prom-client":          "^15.1.3",
+    "rate-limit-redis":     "^4.3.1",
+    "swagger-jsdoc":        "^6.2.8",
+    "swagger-ui-express":   "^5.0.1",
+    "uuid":                 "^14.0.0",
+    "winston":              "^3.19.0",
+    "amqplib":              "^0.10.3"
+  },
+  "devDependencies": {
+    "@eslint/js":   "^10.0.1",
+    "concurrently": "^9.0.1",
+    "dotenv-cli":   "^11.0.0",
+    "eslint":       "^10.4.0",
+    "nodemon":      "^3.1.14"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "author": "devopschronicles",
+  "license": "MIT"
+}
