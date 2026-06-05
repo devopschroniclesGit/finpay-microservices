@@ -13,7 +13,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma/schema.prisma ./prisma/
 
-RUN npm ci --only=production && \
+RUN npm ci && \
     npx prisma generate
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
