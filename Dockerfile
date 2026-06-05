@@ -40,6 +40,7 @@ ARG SERVICE
 ENV SERVICE_NAME=${SERVICE}
 COPY --from=build --chown=finpay:finpay /app/services/${SERVICE}/src ./src
 
+RUN ln -s /app/shared /shared
 USER finpay
 
 EXPOSE 3001 3002 3003 3004
