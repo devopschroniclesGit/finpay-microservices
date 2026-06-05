@@ -1,39 +1,34 @@
-# Multi-stage Dockerfile — builds any of the 4 services
-# Build arg SERVICE = auth | account | transaction | notification
-#
-# Build:   docker build --build-arg SERVICE=auth -t finpay-auth .
-# Run:     docker run -p 3001:3001 --env-file .env finpay-auth
-
 ARG SERVICE=auth
 
 # ── Stage 1: deps ─────────────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 COPY prisma/schema.prisma ./prisma/
 
-RUN npm ci && \
-    npx prisma generate
+RUN npm ci && npx prisma generate
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS build
+FROM node:20-slim AS build
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/prisma ./prisma
-
-# Copy shared code
 COPY shared/ ./shared/
 
-# Copy only the target service
 ARG SERVICE
 COPY services/${SERVICE}/src/ ./services/${SERVICE}/src/
 
 # ── Stage 3: production ───────────────────────────────────────────────────────
-FROM node:20-alpine AS production
+FROM node:20-slim AS production
 
-RUN addgroup -S finpay && adduser -S finpay -G finpay
+RUN apt-get update && apt-get install -y openssl wget && rm -rf /var/lib/apt/lists/*
+RUN groupadd -r finpay && useradd -r -g finpay finpay
 
 WORKDIR /app
 
