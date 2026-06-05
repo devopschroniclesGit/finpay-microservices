@@ -7,13 +7,18 @@ const store = (prefix) => new RedisStore({
   prefix,
 });
 
+const validate = {
+  xForwardedForHeader: false,
+  keyGeneratorIpFallback: false
+};
+
 export const globalLimiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000'),
   max:      parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100'),
   standardHeaders: true,
   legacyHeaders:   false,
-  validate:        { xForwardedForHeader: false, ipKeyGenerator: false },
-  store:           store('rl:global:'),
+  validate,
+  store: store('rl:global:'),
   message: { success: false, message: 'Too many requests, please try again later' },
 });
 
@@ -22,8 +27,8 @@ export const authLimiter = rateLimit({
   max:      parseInt(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS || '20'),
   standardHeaders: true,
   legacyHeaders:   false,
-  validate:        { xForwardedForHeader: false, ipKeyGenerator: false },
-  store:           store('rl:auth:'),
+  validate,
+  store: store('rl:auth:'),
   message: { success: false, message: 'Too many auth attempts, please try again later' },
 });
 
@@ -32,8 +37,8 @@ export const transactionLimiter = rateLimit({
   max:       parseInt(process.env.TXN_RATE_LIMIT_MAX_REQUESTS || '10'),
   standardHeaders: true,
   legacyHeaders:   false,
-  validate:        { xForwardedForHeader: false, ipKeyGenerator: false },
-  keyGenerator:    (req) => req.user?.id || req.ip || 'unknown',
-  store:           store('rl:txn:'),
+  validate,
+  keyGenerator: (req) => req.user?.id || req.ip || 'unknown',
+  store: store('rl:txn:'),
   message: { success: false, message: 'Transaction rate limit exceeded' },
 });
