@@ -1,7 +1,3 @@
-// services/transaction/src/services/transaction.service.js
-// Atomic transfer extracted from finpay-api — same $transaction block
-// NEW: publishes event to RabbitMQ after successful transfer
-
 import prisma from '../../../../shared/config/database.js';
 import { publishEvent } from '../../../../shared/config/rabbitmq.js';
 import logger from '../../../../shared/config/logger.js';
@@ -12,7 +8,6 @@ export const transfer = async ({ senderUserId, receiverAccountId, amount, descri
   const amountCents = Math.round(amount * 100);
   if (amountCents > MAX_TRANSFER) throw new Error('EXCEEDS_LIMIT');
 
-  // Get sender account
   const senderAccount = await prisma.account.findUnique({ where: { userId: senderUserId } });
   if (!senderAccount) throw new Error('ACCOUNT_NOT_FOUND');
   if (senderAccount.id === receiverAccountId) throw new Error('SELF_TRANSFER');
@@ -21,7 +16,6 @@ export const transfer = async ({ senderUserId, receiverAccountId, amount, descri
   const receiverAccount = await prisma.account.findUnique({ where: { id: receiverAccountId } });
   if (!receiverAccount) throw new Error('ACCOUNT_NOT_FOUND');
 
-  // Atomic debit + credit — same pattern as original finpay-api
   const transaction = await prisma.$transaction(async (tx) => {
     await tx.account.update({
       where: { id: senderAccount.id },
@@ -57,15 +51,19 @@ export const transfer = async ({ senderUserId, receiverAccountId, amount, descri
     amountCents,
   });
 
-  // Publish event to RabbitMQ — notification-service and account-service subscribe
-  await publishEvent('transaction.completed', {
-    txnId:            transaction.id,
-    senderUserId,
-    senderAccountId:  senderAccount.id,
-    receiverAccountId,
-    amountCents,
-    description,
-  });
+  // Publish event to RabbitMQ — non-fatal if RabbitMQ is down
+  try {
+    await publishEvent('transaction.completed', {
+      txnId:            transaction.id,
+      senderUserId,
+      senderAccountId:  senderAccount.id,
+      receiverAccountId,
+      amountCents,
+      description,
+    });
+  } catch (rmqErr) {
+    logger.error('RabbitMQ publish failed - transfer still succeeded', { err: rmqErr.message });
+  }
 
   return {
     id:          transaction.id,
