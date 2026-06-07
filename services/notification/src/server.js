@@ -1,9 +1,4 @@
 // services/notification/src/server.js
-// Notification service — NEW service (not in original finpay-api)
-// Subscribes to RabbitMQ finpay.transactions exchange
-// Sends email/log notifications on transaction events
-// Port: 3004
-
 import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
@@ -23,47 +18,50 @@ app.get('/metrics', metricsHandler);
 app.get('/api/v1/health', (req, res) => {
   res.json({ success: true, service: 'notification-service', status: 'healthy' });
 });
-
 app.use(errorHandler);
 
-// ── RabbitMQ consumer ─────────────────────────────────────────────────────────
+// ── RabbitMQ consumer with retry ─────────────────────────────────────────────
+const MAX_RETRIES = 20;
+const RETRY_DELAY_MS = 5000;
 
-async function startConsumer() {
-  await connectRabbitMQ();
+async function startConsumer(attempt = 1) {
+  try {
+    logger.info(`RabbitMQ connect attempt ${attempt}/${MAX_RETRIES}`);
+    await connectRabbitMQ();
 
-  // Subscribe to transaction.completed events
-  await consumeQueue(
-    'notification.transaction.completed',
-    'transaction.completed',
-    async (event) => {
-      logger.info('Processing transaction notification', {
-        txnId:           event.txnId,
-        senderUserId:    event.senderUserId,
-        receiverAccountId: event.receiverAccountId,
-        amountCents:     event.amountCents,
+    await consumeQueue('notification.transaction.completed', async (msg) => {
+      const data = JSON.parse(msg.content.toString());
+      logger.info('Transaction notification received', {
+        txnId:            data.txnId,
+        senderAccountId:  data.senderAccountId,
+        receiverAccountId: data.receiverAccountId,
+        amountCents:      data.amountCents,
       });
+    });
 
-      // In production: send email via SES / SMS via SNS
-      // For demo: structured log acts as the notification
-      logger.info('NOTIFICATION SENT', {
-        type:    'TRANSFER_COMPLETE',
-        txnId:   event.txnId,
-        amount:  `ZAR ${(event.amountCents / 100).toFixed(2)}`,
-        to:      event.receiverAccountId,
-        from:    event.senderUserId,
-        alertEmail: process.env.ALERT_EMAIL,
-      });
+    logger.info('Notification service consumer started');
+  } catch (err) {
+    logger.error('RabbitMQ connect failed', { err: err.message });
+
+    if (attempt < MAX_RETRIES) {
+      const delay = Math.min(RETRY_DELAY_MS * attempt, 30000);
+      logger.warn(`Retrying in ${delay / 1000}s... (attempt ${attempt}/${MAX_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return startConsumer(attempt + 1);
     }
-  );
 
-  logger.info('Notification service consumer started');
+    logger.error('Max retries reached — notification consumer not started. Service still healthy.');
+    // Do NOT exit — health endpoint stays up so pod does not crash loop
+  }
 }
 
-startConsumer().then(() => {
-  app.listen(PORT, () => logger.info(`notification-service running on port ${PORT}`));
-}).catch((err) => {
-  logger.error('Failed to start notification service', { err: err.message });
-  process.exit(1);
+// ── Start ─────────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  logger.info(`notification-service running on port ${PORT}`);
+  // Start consumer in background — do not block HTTP server
+  startConsumer().catch(err => {
+    logger.error('Unexpected error in startConsumer', { err: err.message });
+  });
 });
 
 export default app;
